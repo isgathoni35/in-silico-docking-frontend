@@ -42,6 +42,9 @@ export interface DockingJobRequest {
   grid_center: Vector3D;
   grid_size: Vector3D;
   exhaustiveness?: number;
+  energy_range?: number;
+  num_modes?: number;
+  forcefield?: string;
 }
 
 export interface DockingJobResponse {
@@ -49,6 +52,10 @@ export interface DockingJobResponse {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   top_affinity_score?: number;
   poses?: DockingPose[];
+  receptor_pdbqt?: string;
+  ligand_pdbqt?: string;
+  raw_log?: string;
+  vina_cmd?: string;
   error_message?: string;
   created_at: string;
 }

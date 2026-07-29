@@ -6,7 +6,10 @@ import { Mol3DErrorBoundary } from '@/components/3d/3DmolErrorBoundary';
 import { ProteinForm } from '@/components/docking/ProteinForm';
 import { LigandForm } from '@/components/docking/LigandForm';
 import { GridBoxControls } from '@/components/docking/GridBoxControls';
+import { AdvancedSettingsAccordion } from '@/components/docking/AdvancedSettingsAccordion';
 import { ScoreTable } from '@/components/docking/ScoreTable';
+import { FileExporterPanel } from '@/components/docking/FileExporterPanel';
+import { TerminalConsoleLog } from '@/components/docking/TerminalConsoleLog';
 import { InsightReportCard } from '@/components/ai/InsightReportCard';
 import { ProteinMetadata, LigandMetadata, Vector3D, DockingPose, AIInsightReport } from '@/lib/types';
 import { apiClient } from '@/lib/api-client';
@@ -18,9 +21,20 @@ export default function DockingDashboard() {
   const [gridCenter, setGridCenter] = useState<Vector3D>({ x: 0, y: 0, z: 0 });
   const [gridSize, setGridSize] = useState<Vector3D>({ x: 20, y: 20, z: 20 });
 
+  // Advanced Vina parameters state
+  const [exhaustiveness, setExhaustiveness] = useState<number>(8);
+  const [energyRange, setEnergyRange] = useState<number>(3.0);
+  const [numModes, setNumModes] = useState<number>(9);
+  const [forcefield, setForcefield] = useState<string>('MMFF94');
+
   const [dockingRunning, setDockingRunning] = useState<boolean>(false);
   const [poses, setPoses] = useState<DockingPose[]>([]);
   const [selectedPose, setSelectedPose] = useState<DockingPose | null>(null);
+
+  const [receptorPdbqt, setReceptorPdbqt] = useState<string | undefined>(undefined);
+  const [ligandPdbqt, setLigandPdbqt] = useState<string | undefined>(undefined);
+  const [rawLog, setRawLog] = useState<string | undefined>(undefined);
+  const [vinaCmd, setVinaCmd] = useState<string | undefined>(undefined);
 
   const [aiReport, setAiReport] = useState<AIInsightReport | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState<boolean>(false);
@@ -32,6 +46,9 @@ export default function DockingDashboard() {
 
   const handleLigandPrepared = (l: LigandMetadata) => {
     setLigand(l);
+    if (l.pdbqt_content) {
+      setLigandPdbqt(l.pdbqt_content);
+    }
   };
 
   const handleStartDocking = async () => {
@@ -42,6 +59,8 @@ export default function DockingDashboard() {
       setPoses([]);
       setSelectedPose(null);
       setAiReport(null);
+      setRawLog(undefined);
+      setVinaCmd(undefined);
 
       const job = await apiClient.runDocking({
         pdb_id: protein.pdb_id,
@@ -49,7 +68,10 @@ export default function DockingDashboard() {
         ligand_name: ligand.name,
         grid_center: gridCenter,
         grid_size: gridSize,
-        exhaustiveness: 8,
+        exhaustiveness: exhaustiveness,
+        energy_range: energyRange,
+        num_modes: numModes,
+        forcefield: forcefield,
       });
 
       // Poll job status
@@ -62,6 +84,11 @@ export default function DockingDashboard() {
           clearInterval(interval);
           setDockingRunning(false);
           setPoses(statusRes.poses);
+          setReceptorPdbqt(statusRes.receptor_pdbqt);
+          setLigandPdbqt(statusRes.ligand_pdbqt || ligand.pdbqt_content);
+          setRawLog(statusRes.raw_log);
+          setVinaCmd(statusRes.vina_cmd);
+
           if (statusRes.poses.length > 0) {
             setSelectedPose(statusRes.poses[0]);
           }
@@ -91,7 +118,7 @@ export default function DockingDashboard() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
-      {/* Left Column: Interactive Controls */}
+      {/* Left Column: Interactive Controls & Parameters */}
       <div className="lg:col-span-5 space-y-5">
         <ProteinForm onProteinLoaded={handleProteinLoaded} />
         <LigandForm onLigandPrepared={handleLigandPrepared} />
@@ -101,6 +128,18 @@ export default function DockingDashboard() {
           gridSize={gridSize}
           onChangeCenter={setGridCenter}
           onChangeSize={setGridSize}
+        />
+
+        {/* Advanced Scientific Parameters Accordion */}
+        <AdvancedSettingsAccordion
+          exhaustiveness={exhaustiveness}
+          energyRange={energyRange}
+          numModes={numModes}
+          forcefield={forcefield}
+          onChangeExhaustiveness={setExhaustiveness}
+          onChangeEnergyRange={setEnergyRange}
+          onChangeNumModes={setNumModes}
+          onChangeForcefield={setForcefield}
         />
 
         {/* Launch Docking Execution Button */}
@@ -113,7 +152,7 @@ export default function DockingDashboard() {
             {dockingRunning ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Running AutoDock Vina Calculation...
+                Running AutoDock Vina Engine (Exhaustiveness: {exhaustiveness})...
               </>
             ) : (
               <>
@@ -128,9 +167,19 @@ export default function DockingDashboard() {
             </p>
           )}
         </div>
+
+        {/* Scientific File Exporters */}
+        <FileExporterPanel
+          receptorPdbqt={receptorPdbqt}
+          ligandPdbqt={ligandPdbqt}
+          poses={poses}
+          rawLog={rawLog}
+          pdbId={protein?.pdb_id}
+          ligandName={ligand?.name}
+        />
       </div>
 
-      {/* Right Column: 3D Viewport, Scores, & AI Report */}
+      {/* Right Column: 3D Viewport, Scores, Terminal & AI Report */}
       <div className="lg:col-span-7 space-y-6">
         {/* 3D WebGL Viewport */}
         <div className="h-[480px]">
@@ -150,6 +199,9 @@ export default function DockingDashboard() {
           selectedPoseMode={selectedPose?.mode}
           onSelectPose={setSelectedPose}
         />
+
+        {/* Terminal Execution Log Console */}
+        <TerminalConsoleLog vinaCmd={vinaCmd} rawLog={rawLog} />
 
         {/* AI Insight Report Card */}
         <InsightReportCard report={aiReport || undefined} loading={aiReportLoading} />
